@@ -1,24 +1,28 @@
 import axios from "axios";
 import { load } from "cheerio";
-import fs from "fs";
-import yargs from "yargs";
-import { hideBin } from "yargs/helpers";
 import filterByPrice from "./filter-by-price.js";
-const argv = yargs(hideBin(process.argv)).argv;
+import GenerateFile from "./generate-file.js";
+import { CITY, PER_PAGE, MAXIMUM_PRICE, MAX_PAGES } from "./constants.js";
 
-const city = argv.location || "temuco-la-araucania";
-const MAX_pages = argv.maxPages || 1;
 let houses = [];
 let page = 0;
 
+/**
+ * Delay promise
+ * @param {Number} ms - Miliseconds delay
+ * @returns {Promise} timeout promise
+ */
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/**
+ * Recursive asynchronous function. Obtain N houses from portalinmobiliario web. (N = MAX_PAGES * PER_PAGE)
+ */
 async function getHousesFromWeb() {
-	console.log(`Page ${page + 1} of ${MAX_pages}`);
+	console.log(`Page ${page + 1} of ${MAX_PAGES}`);
 
 	const response = await axios.get(
-		`https://www.portalinmobiliario.com/venta/casa/propiedades-usadas/${city}/_Desde_${
-			(argv.perPage || 50) * (page + 1)
+		`https://www.portalinmobiliario.com/venta/casa/propiedades-usadas/${CITY}/_Desde_${
+			PER_PAGE * (page + 1)
 		}_NoIndex_True`
 	);
 
@@ -62,40 +66,63 @@ async function getHousesFromWeb() {
 
 	await sleep(1000);
 
-	return page === MAX_pages ? page : getHousesFromWeb();
+	return page === MAX_PAGES ? page : getHousesFromWeb();
 }
 
-//Get houses with the method `getHousesFromWeb`, finally, get the price in CLP and generate the JSON file with the extracted data
-getHousesFromWeb().then(async () => {
+/**
+ * Get UF value from mindicador API
+ * @returns {Number} Current UF value
+ */
+async function getUFValue() {
 	const { data } = await axios.get("https://mindicador.cl/api");
-	const housesWithPriceInCLP = houses.map((house) => {
+	return data.uf.valor;
+}
+
+/**
+ * Format number to CLP currency
+ * @param {Number} price - Unformatted Price
+ * @returns {string} formatted price
+ */
+const formatCLPPrice = (price) =>
+	new Intl.NumberFormat("es-CL", {
+		currency: "CLP",
+		style: "currency",
+	}).format(price);
+
+/**
+ * Append priceInCLP variable to the house object in the houses array
+ * The priceInCLP is obtained by UFValue * house.originalPrice
+ * @param {House[]} houses - Houses list
+ * @param {Number} UFValue - UF value
+ * @returns {House[]} Houses with priceInClP key
+ */
+function addPriceInCLPToHouses({ houses, UFValue }) {
+	return houses.map((house) => {
+		const priceInCLP = house.inUF
+			? house.originalPrice * UFValue
+			: house.originalPrice;
 		return {
 			...house,
-			priceInCLP: new Intl.NumberFormat("es-CL", {
-				currency: "CLP",
-				style: "currency",
-			}).format(
-				house.inUF ? house.originalPrice * data.uf.valor : house.originalPrice
-			),
+			priceInCLP: formatCLPPrice(priceInCLP),
 		};
 	});
+}
 
-	fs.writeFile(
-		`./json/${city}.json`,
-		JSON.stringify(housesWithPriceInCLP),
-		function (err) {
-			if (err) {
-				console.log(err);
-			}
-			console.log(`${city} JSON generated successfully`);
-		}
-	);
+/**
+ * Get houses with the method `getHousesFromWeb`, finally get the price in CLP and generate the JSON file with the extracted data.
+ * Optionally filter houses by `maximumPrice`
+ */
+getHousesFromWeb().then(async () => {
+	const UFValue = await getUFValue();
+	const housesWithPriceInCLP = addPriceInCLPToHouses({ houses, UFValue });
 
-	if (argv.maximumPrice) {
+	GenerateFile.JSON({ filename: CITY, data: housesWithPriceInCLP });
+
+	if (MAXIMUM_PRICE) {
 		filterByPrice({
 			houses: housesWithPriceInCLP,
-			maximumPrice: argv.maximumPrice,
-			city,
+			maximumPrice: MAXIMUM_PRICE,
+			city: CITY,
 		});
 	}
 });
