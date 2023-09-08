@@ -1,8 +1,14 @@
-import axios from "axios";
 import { load } from "cheerio";
 import filterByPrice from "./filter-by-price.js";
-import GenerateFile from "./generate-file.js";
-import { CITY, PER_PAGE, MAXIMUM_PRICE, MAX_PAGES } from "./constants.js";
+import GenerateFile from "./utils/generate-file.js";
+import {
+	CITY,
+	PER_PAGE,
+	MAXIMUM_PRICE,
+	MAX_PAGES,
+	USED_HOUSES_PORTAL_INM_WEB,
+} from "./constants.js";
+import { getRequest } from "./utils/axios.js";
 
 let houses = [];
 let page = 0;
@@ -20,15 +26,14 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function getHousesFromWeb() {
 	console.log(`Page ${page + 1} of ${MAX_PAGES}`);
 
-	const response = await axios.get(
-		`https://www.portalinmobiliario.com/venta/casa/propiedades-usadas/${CITY}/_Desde_${
+	const data = await getRequest(
+		`${USED_HOUSES_PORTAL_INM_WEB}/${CITY}/_Desde_${
 			PER_PAGE * (page + 1)
 		}_NoIndex_True`
 	);
 
 	// Get the HTML code of the webpage
-	const html = response.data;
-	const $ = load(html);
+	const $ = load(data);
 
 	// Find all elements with ui-search-result__wrapper class, in div element.
 	$("div.ui-search-result__wrapper").each((_index, el) => {
@@ -74,8 +79,8 @@ async function getHousesFromWeb() {
  * @returns {Number} Current UF value
  */
 async function getUFValue() {
-	const { data } = await axios.get("https://mindicador.cl/api");
-	return data.uf.valor;
+	const { uf } = await getRequest("https://mindicador.cl/api");
+	return uf.valor;
 }
 
 /**

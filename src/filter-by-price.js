@@ -1,4 +1,4 @@
-import GenerateFile from "./generate-file.js";
+import GenerateFile from "./utils/generate-file.js";
 
 const SHEET_NAME = "Houses";
 const FILENAME_PREFIX = "filtered";
